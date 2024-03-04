@@ -1,0 +1,542 @@
+---
+title: "GenomicSelection"
+author: "Camilo E. Sánchez & Danilo Moreta"
+date: "Cali, CO | 26 February 2024"
+output:
+  html_document:
+    fig_caption: yes
+    fig_height: 7
+    fig_width: 5
+    highlight: haddock
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_float:
+      collapsed: no
+      toc_depth: 4
+  pdf_document:
+    toc: yes
+  word_document:
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+# 1: Define inputs
+
+```{r}
+dir <- 
+  'D:/OneDrive - CGIAR/00_CassavaBioinformaticsPlatform/07_GenomicSelection/03_DaRTSeq/'
+geno_file <- 'Report_DCas23-8685_SNP.csv'
+pheno_file <- 'GS_2022_first_cohort.xlsx'
+```
+
+# 2: Setting working directory
+
+```{r}
+getwd()
+setwd(dir)
+getwd()
+```
+
+# 3: Install packages
+
+```{r}
+if (!require(data.table)) install.packages(data.table)
+if (!require(readxl)) install.packages(readxl)
+if (!require(tidyverse)) install.packages(tidyverse)
+if (!require(rrBLUP)) install.packages(rrBLUP)
+```
+
+# 4: Load libraries
+
+```{r}
+library(data.table)
+library(readxl)
+library(tidyverse)
+library(rrBLUP)
+```
+
+# 5: Read files
+
+```{r}
+# Read geno data
+geno <- as.data.frame(t(fread(geno_file))) %>%
+  slice(-2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15, -16) %>%
+  select(-1, -2, -3, -4)
+
+# Read pheno data, filter by group2, delete unnecessary columns and rename the accessions
+pheno <- read_excel(pheno_file) %>%
+  dplyr::filter(group == 'group2') %>%
+  select(-1, -2) %>%
+  rename(Genotype = geno_accession_name)
+
+# Display the first few rows of each data frame to check
+head(geno)
+head(pheno)
+```
+
+# 6: Modify geno file
+
+```{r}
+# Replace a value inside the data frame
+geno[1,1] <- "Plates"
+
+# Change column and row names
+colnames(geno) <- c(geno[1,])
+rownames(geno) <- c(1:nrow(geno))
+
+# Delete first row, filter by plate, delete firts column and chage markers names
+geno <- geno %>% slice(-1) %>%
+  dplyr::filter(Plates == 'Group2_Plate01' | Plates == 'Group2_Plate02' |
+                  Plates == 'Group2_Plate03' | Plates == 'Group2_Plate04') %>%
+  select(-1) %>%
+  rename(Genotype = MarkerName)
+```
+
+# 7: Joint accession names
+
+```{r}
+# Extract genotypes names of geno and pheno file
+geno_names <- as.data.frame(geno$Genotype)
+pheno_names <- as.data.frame(pheno$Genotype)
+
+# Separate the names
+geno_names <- geno_names %>% 
+  separate(`geno$Genotype`, into = c("Date", "Trial", "Genotype"), sep = "_") %>%
+  select(Genotype)
+
+# Separate the names
+pheno_names <- pheno_names %>% 
+  separate(`pheno$Genotype`, into = c("Date", "Trial", "Genotype"), sep = "_")
+
+pheno_names <- replace(pheno_names, is.na(pheno_names), '-')
+
+pheno_names <- pheno_names %>%
+  mutate(Genotype = ifelse(Genotype == '-', paste0(Date), Genotype)) %>%
+  select(Genotype)
+
+# Find duplicate values between pheno and geno files
+duplicate_names <- intersect(geno_names$Genotype, pheno_names$Genotype)
+
+# Replace genotypes names
+geno$Genotype <- geno_names$Genotype
+pheno$Genotype <- pheno_names$Genotype
+
+#Filter unused genotypes
+# Geno file
+geno <- geno %>%
+  dplyr::filter(Genotype %in% duplicate_names)
+
+# Pheno file
+pheno <- pheno %>%
+  dplyr::filter(Genotype %in% duplicate_names)
+```
+
+# 8: Messages
+
+```{r}
+# Print the number of samples and SNPs in genomic data files
+message(paste0("Number of samples in geno file: ", nrow(geno) , "\n",
+               "Number of samples in pheno file: ", nrow(pheno), "\n\n",
+               "WARNING: The samples in both files must be the same"))
+
+# Print the number of SNPs and traits to analyze
+message(paste0("Number of SNPs: ", ncol(geno) - 1 , "\n",
+               "Number of traits: ", ncol(pheno) - 1))
+```
+
+# 9: Re-formatting SNP values
+
+```{r}
+geno[geno == 0] <- -1
+geno[geno == 1] <- 0
+geno[geno == 2] <- 1
+geno[geno == '-'] <- NA
+```
+
+# 10: Define function: GS_prediction
+
+```{r}
+# Define the function
+GS <- function(single_trait, pheno, geno, prop, k, method){
+  
+    # Starting run time
+    start_time <- Sys.time()
+    
+    # Convert geno file into numeric values
+    geno <- sapply(geno[,-1], as.numeric)
+    
+    # Impute and extract imputed values in a data frame
+    geno_imputed <- 
+      data.frame(
+      A.mat(geno, max.missing = 0.5, impute.method = method, return.imputed = T)$imputed
+      )
+
+    # Round to -1, 0 and 1 the imputed values
+    geno_imputed <- round(geno_imputed, digits = 0)
+    
+    # Select the trait
+    trait <- pheno %>% select(all_of(single_trait)) %>% drop_na()
+    
+    # Estimate the proportion of samples to use and subset the data based on this
+    prop_num <- round(length(rownames(trait)) * prop)
+    geno_sub <- subset(geno_imputed, (rownames(geno_imputed) %in% rownames(trait)))
+
+    # Divide data in training and testing sets
+    training_samples <- as.matrix(sample(rownames(trait), prop_num))
+    testing_samples <- as.matrix(setdiff(rownames(trait), training_samples))
+    
+    # Select training data
+    pheno_training <- as.matrix(trait[training_samples,])
+    geno_training <- as.matrix(geno_sub[training_samples,])
+    
+    # Select testing data
+    pheno_testing <- as.matrix(trait[testing_samples,])
+    geno_testing <- as.matrix(geno_sub[testing_samples,])
+    
+    # Training model
+    trained_model <- mixed.solve(y = as.matrix(pheno_training), Z = geno_training)
+    
+    # Marker effect
+    marker_effects <- as.matrix(trained_model$u)
+    
+    # Baseline, intercept
+    BLUE <- as.vector(trained_model$beta)
+    
+    # Predictions
+    predict_training <- as.matrix(geno_training) %*% marker_effects
+    predict_testing <- as.matrix(geno_testing) %*% marker_effects
+    
+    # Predictions + BLUE
+    predicted_training_result <- as.vector(predict_training[,1] + BLUE)
+    predicted_testing_result <- as.vector(predict_testing[,1] + BLUE)
+    
+    # Accuracy & correlation
+    accuracy_testing <- cor(as.vector(pheno_testing), predicted_testing_result, 
+                            use = "complete")
+    corr_model <- cor(as.vector(pheno_training), predicted_training_result, 
+                      use = "complete")
+    
+    # Ends running time
+    end_time <- Sys.time()
+    
+    # Calculate the time
+    running_time <- end_time - start_time
+
+    return(list(trait = single_trait,
+                training_prop = prop,
+                testing_prop = 1 - prop,
+                cv = k,
+                prediction_ability = accuracy_testing, 
+                time = running_time))
+
+}
+```
+
+# 11: Cross validation for single trait
+
+```{r}
+# Define inputs
+method <- 'mean'
+cv <- 100
+prop <- 0.75
+single_trait <- 'yield_ha'
+
+# Create an empty data frame to storage results
+trait_df <- data.frame(matrix(ncol = 6, nrow = 0))
+
+# Create and set a directory to store the results
+setwd(dir)
+dir.create(paste0('GS_Results_SingleTrait_', single_trait, '_', cv, '_', prop))
+setwd(paste0('GS_Results_SingleTrait_', single_trait, '_', cv, '_', prop))
+
+# Define the time of starting
+start_time <- Sys.time()
+
+# Perform the function using CV for a single trait
+for (k in 1:cv){
+    
+    # Perform the function
+    result <- GS(single_trait, pheno, geno, prop, k, method)
+    
+    # Store the results
+    trait_df <- rbind(trait_df, data.frame(result))
+    
+    # Progress bar
+    cat('\r', k, ' files processed |', rep('=', k / 10), 
+        ifelse(k == nrow(cv), '|\n', '>'), sep = '')
+    
+}
+
+# Save the results
+write.csv(trait_df, paste0(single_trait, '_', cv, '_', prop, '.csv'))
+
+# Calculate ending time
+end_time <- Sys.time()
+
+# Print running time
+message(paste0('Function ends of running. Time taken: ', (end_time - start_time)))
+```
+
+# 12: Cross validation for all traits
+
+```{r}
+# Define inputs
+method <- 'mean'
+cv <- 50
+prop <- 0.8
+
+# Create an empty data frame to storage results
+trait_df <- data.frame(matrix(ncol = 6, nrow = 0))
+
+# Create and set a directory to store the results
+setwd(dir)
+dir.create(paste0('GS_Results_AllTraits_', cv, '_', prop))
+setwd(paste0('GS_Results_AllTraits_', cv, '_', prop))
+
+# Define the time of starting
+start_time <- Sys.time()
+
+# Perform the function complete using all traits and CV
+for (single_trait in colnames(pheno[,-1])){
+  
+  # Informative message
+  message(paste0('Working on trait: ', single_trait, '\n'))
+    
+  # Cross validation for each trait
+  for (k in 1:cv){
+      
+    # Perform the function
+    result <- GS(single_trait, pheno, geno, prop, k, method)
+    
+    # Store the results
+    trait_df <- rbind(trait_df, data.frame(result))
+      
+    # Progress bar
+    cat('\r', k, ' files processed |', rep('=', k / 10), 
+        ifelse(k == nrow(cv), '|\n', '>'), sep = '')
+      
+    }
+    
+  # Informative message
+  message(paste0('\n', 'Done on trait: ', single_trait, '\n'))
+    
+}
+
+# Save the results
+write.csv(trait_df, paste0('GS_Results_AllTraits_', cv, '_', prop, '.csv'))
+
+# Calculate ending time
+end_time <- Sys.time()
+
+# Print running time
+message(paste0('Function ends of running. Time taken: ', (end_time - start_time)))
+```
+
+# 13: Cross validation using all traits and different prop values
+
+```{r}
+# Define inputs
+method <- 'mean'
+cv <- 20
+props <- c(0.9, 0.8, 0.7, 0.6, 0.5)
+
+# Create an empty data frame to storage results
+trait_df <- data.frame(matrix(ncol = 5, nrow = 0))
+
+# Create and set a directory to store the results
+setwd(dir)
+dir.create(paste0('GS_Results_AllTraits_DiffProp_', cv))
+setwd(paste0('GS_Results_AllTraits_DiffProp_', cv))
+
+# Define starting point
+start_time <- Sys.time()
+
+# Perform the function complete using all traits, CV and different prop
+for (single_trait in colnames(pheno[,-1])){
+  
+  # Informative message
+  message(paste0('Working on trait: ', single_trait, '\n'))
+    
+  # Iterate over the different prop values
+  for (prop in props){
+    
+    # Informative message
+    message(paste0('% of validation set: ', 1 - prop, '\n'))
+    
+    # Cross validation for each trait
+    for (k in 1:cv){
+      
+      # Perform the function
+      result <- GS(single_trait, pheno, geno, prop, k, method)
+      
+      # Store the results
+      trait_df <- rbind(trait_df, data.frame(result))
+      
+      # Progress bar
+      cat('\r', k, ' files processed |', rep('=', k / 10), 
+          ifelse(k == nrow(cv), '|\n', '>'), sep = '')
+      
+    }
+    
+    # Informative message
+    message(paste0('\n', 'Done on validation set of: ', 1 - prop, '%', '\n'))
+  
+  }
+  
+  # Informative message
+  message(paste0('\n', 'Done on trait: ', single_trait, '\n'))
+  
+}
+
+# Save the results
+write.csv(trait_df, paste0('GS_Results_AllTraits_DiffProp_', cv, '.csv'))
+
+# Calculate ending time
+end_time <- Sys.time()
+
+# Print running time
+message(paste0('Function ends of runnin. Time taken: ', (end_time - start_time)))
+```
+
+# 14: Plots
+
+```{r}
+# Write the labels
+labels <- c('Height', 'Dry matter gravity', 'Root skin color', 'Height 1st branch',
+            'Branch angle', 'Plant type', 'Root shape', 'Carotenoid', 
+            'Dry matter yield (ha)', 'Root peduncle', '# of commercial roots', 
+            'Branch number', 'Thrips', 'Yield (ha)', 'Root type', 'Root weight (Plot)',
+            'Height wt leaf', 'Root length', 'Germinated number (plot)', '% Germination',
+             'Root constriction')
+
+# Extract data
+traininig_value <- unique(trait_df$training_prop)
+CV_value <- max(trait_df$cv)
+
+# Accuracy plot for all traits
+pdf(paste0('GS_Plot_AccuracyAbility.pdf'), width = 15, height = 10)
+
+ggplot(trait_df, aes(x = prediction_ability, 
+                     y = reorder(trait, prediction_ability, FUN = median),
+                     fill = trait, alpha = 0.5)) +
+  geom_violin(fill = "gray80", color = "white", width = 1, alpha = 0.5) +
+  geom_boxplot(width = 0.3) + 
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.title = element_text(size = 14, color = 'black'),
+        axis.text = element_text(size = 14, color = 'black'),
+        title = element_text(size = 14, color = 'black')) + 
+  labs(x = 'Prediction ability', y = 'Traits', 
+       title = paste0('Training proportion: ', traininig_value, ', CV: ', CV_value)) +
+  xlim(0, 1) +
+  scale_y_discrete(labels = labels) +
+  geom_vline(xintercept = 0.50, linetype = 'dotted', color = 'gray40', linewidth = 0.80) + 
+  geom_vline(xintercept = 0.30, linetype = 'dotted', color = 'gray40', linewidth = 0.80)
+
+dev.off()
+```
+
+# 15: Define function: Genomic Estimated Breeding Values (GEBVs)
+
+```{r}
+# Define function
+GEBVs <- function(single_trait, pheno, geno, testing_names){
+  
+  # Impute and extract imputed values in a data frame
+  Imputed <- 
+    data.frame(A.mat((sapply(geno[,-1], as.numeric)), max.missing = 0.5, 
+                     impute.method = "EM", return.imputed = T)$imputed)
+
+  # Round to -1, 0 and 1 the imputed values
+  geno_tr_model <- round(Imputed, digits = 0)
+
+  # Divide data in training and testing
+  training_samples <- data.frame(pheno$Genotype) %>%
+    sample_frac(prop_num, replace = F) %>%
+    rename(Genotype = 1)
+
+  testing_samples <- data.frame(setdiff(pheno$Genotype, training_samples$Genotype)) %>%
+    rename(Genotype = 1)
+
+  # Subset geno and pheno file according to training samples 
+  geno_tr <- geno %>% dplyr::filter(Genotype %in% training_samples$Genotype)
+  pheno_tr <- pheno %>% dplyr::filter(Genotype %in% training_samples$Genotype)
+  
+  #
+  trait <- pheno_tr %>% select(all_of(single_trait))
+  trained_model <- mixed.solve(y = as.matrix(trait), Z = geno_tr_model)
+    
+  #
+  marker_effects <- as.matrix(trained_model$u)
+  BLUE <- as.vector(trained_model$beta)
+  markers_model <- colnames(geno_tr_model)
+    
+  # 
+  geno_test <- geno %>% 
+    dplyr::filter(Genotype %in% testing_samples$Genotype) %>%
+    select(-1) %>%
+    select(one_of(markers_model))
+    
+  #
+  geno_test <- sapply(as.matrix(geno_test), as.numeric)
+    
+  #
+  predict_gs <- geno_test %*% marker_effects
+  predict_gs_result <- data.frame(predicted_value = (predict_gs[,1] + BLUE))
+
+  #
+  message(paste0("Saving GEBVs results of: ", single_trait))
+  write.csv(predict_gs_result, paste0(single_trait, '_GEBV.csv'))
+  return(list('trait' = single_trait,
+              'BLUE' = BLUE,
+              'mean' = mean(predict_gs_result[,1])))
+
+}
+```
+
+# 16: Estimate GEBVs DEFINIR BIEN VOLVER A REVISAR
+
+```{r}
+# Define inputs
+single_trait <- 'yield_ha'
+prop_num <- 0.8
+
+# Create and set a directory to store the results
+setwd(dir)
+dir.create(paste0('GS_GEBVs_SingleTrait_', single_trait))
+setwd(paste0('GS_GEBVs_SingleTrait_', single_trait))
+
+# Define starting point
+start_time <- Sys.time()
+
+# GEBVs for all traits
+for (single_trait in colnames(pheno)[-1]){
+    
+    #
+    message(paste0('Trait: ', single_trait))
+
+    #
+    blup_table <- data.frame(matrix(ncol = 2, nrow = 0))
+
+    # 
+    result <- gs_prediction(single_trait, pheno, geno, testing_names)
+    blup_table <- rbind(blup_table, data.frame(result))
+    
+    #
+    assign(paste0(single_trait, "_result" ), result)
+    save(result, file = paste0(single_trait, "_result.RData"))
+
+}
+
+# Save the results
+write.csv(blup_table, paste0('Results_BLUE_MEAN.csv'))
+
+# Calculate ending time
+end_time <- Sys.time()
+
+# Print running time
+message(paste0('Function ends of running. Time taken: ', (end_time - start_time)))
+
+```
