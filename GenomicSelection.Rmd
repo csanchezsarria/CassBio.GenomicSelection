@@ -166,7 +166,8 @@ source('D:/OneDrive - CGIAR/00_CassavaBioinformaticsPlatform/00_Basics/04_GitHub
 
 ```{r}
 # Define inputs
-method <- 'mean'
+imp_method <- 'mean'
+GS_method <- 'REML'
 cv <- 100
 prop <- 0.75
 single_trait <- 'yield_ha'
@@ -186,7 +187,7 @@ start_time <- Sys.time()
 for (k in 1:cv){
     
     # Perform the function
-    result <- GS(single_trait, pheno, geno, prop, k, method)
+    result <- GS(single_trait, pheno, geno, prop, k, imp_method, GS_method)
     
     # Store the results
     trait_df <- rbind(trait_df, data.frame(result))
@@ -198,7 +199,7 @@ for (k in 1:cv){
 }
 
 # Save the results
-write.csv(trait_df, paste0(single_trait, '_', cv, '_', prop, '.csv'))
+write.csv(trait_df, paste0(single_trait, '_', cv, '_', prop, '.csv'), row.names = F)
 
 # Calculate ending time
 end_time <- Sys.time()
@@ -211,7 +212,8 @@ message(paste0('Function ends of running. Time taken: ', (end_time - start_time)
 
 ```{r}
 # Define inputs
-method <- 'mean'
+imp_method <- 'mean'
+GS_method <- 'REML'
 cv <- 50
 prop <- 0.8
 
@@ -236,7 +238,7 @@ for (single_trait in colnames(pheno[,-1])){
   for (k in 1:cv){
       
     # Perform the function
-    result <- GS(single_trait, pheno, geno, prop, k, method)
+    result <- GS(single_trait, pheno, geno, prop, k, imp_method, GS_method)
     
     # Store the results
     trait_df <- rbind(trait_df, data.frame(result))
@@ -253,7 +255,7 @@ for (single_trait in colnames(pheno[,-1])){
 }
 
 # Save the results
-write.csv(trait_df, paste0('GS_Results_AllTraits_', cv, '_', prop, '.csv'))
+write.csv(trait_df, paste0('GS_Results_AllTraits_', cv, '_', prop, '.csv'), row.names = F)
 
 # Calculate ending time
 end_time <- Sys.time()
@@ -266,7 +268,8 @@ message(paste0('Function ends of running. Time taken: ', (end_time - start_time)
 
 ```{r}
 # Define inputs
-method <- 'mean'
+imp_method <- 'mean'
+GS_method <- 'REML'
 cv <- 20
 props <- c(0.9, 0.8, 0.7, 0.6, 0.5)
 
@@ -297,7 +300,7 @@ for (single_trait in colnames(pheno[,-1])){
     for (k in 1:cv){
       
       # Perform the function
-      result <- GS(single_trait, pheno, geno, prop, k, method)
+      result <- GS(single_trait, pheno, geno, prop, k, imp_method, GS_method)
       
       # Store the results
       trait_df <- rbind(trait_df, data.frame(result))
@@ -319,7 +322,7 @@ for (single_trait in colnames(pheno[,-1])){
 }
 
 # Save the results
-write.csv(trait_df, paste0('GS_Results_AllTraits_DiffProp_', cv, '.csv'))
+write.csv(trait_df, paste0('GS_Results_AllTraits_DiffProp_', cv, '.csv'), row.names = F)
 
 # Calculate ending time
 end_time <- Sys.time()

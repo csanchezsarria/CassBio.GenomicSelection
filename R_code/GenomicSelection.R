@@ -10,7 +10,8 @@
 # geno: 
 # prop:
 # k: 
-# method:
+# imp_method:
+# GS_method: 
 
 
 
@@ -20,7 +21,7 @@
 
 
 # 0: Function init -------------------------------------------------------------
-GS <- function(single_trait, pheno, geno, prop, k, method){
+GS <- function(single_trait, pheno, geno, prop, k, imp_method, GS_method){
   
   
   
@@ -37,7 +38,7 @@ GS <- function(single_trait, pheno, geno, prop, k, method){
   # Impute and extract imputed values in a data frame
   geno_imputed <- 
     data.frame(
-      A.mat(geno, max.missing = 0.5, impute.method = method, return.imputed = T)$imputed
+      A.mat(geno, max.missing = 0.5, impute.method = imp_method, return.imputed = T)$imputed
     )
   
   # Round to -1, 0 and 1 the imputed values
@@ -69,7 +70,8 @@ GS <- function(single_trait, pheno, geno, prop, k, method){
   
   # 4: -------------------------------------------------------------------------
   # Training model
-  trained_model <- mixed.solve(y = as.matrix(pheno_training), Z = geno_training)
+  trained_model <- mixed.solve(y = as.matrix(pheno_training), Z = geno_training,
+                               method = GS_method)
   
   # Marker effect
   marker_effects <- as.matrix(trained_model$u)
