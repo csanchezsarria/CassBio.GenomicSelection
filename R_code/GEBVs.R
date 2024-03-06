@@ -1,4 +1,4 @@
-# Short name: Genomic Selection
+# Short name: Genomic Estimated Breeding Values
 # Description: 
 # Output: 
 #
@@ -9,7 +9,6 @@
 # pheno:
 # geno: 
 # prop:
-# k: 
 # method:
 
 
@@ -20,13 +19,7 @@
 
 
 # 0: Function init -------------------------------------------------------------
-GS <- function(single_trait, pheno, geno, prop, k, method){
-  
-  
-  
-  # 1: -------------------------------------------------------------------------
-  # Starting run time
-  start_time <- Sys.time()
+GEBVs <- function(single_trait, pheno, geno, prop, method){
   
   
   
@@ -88,18 +81,6 @@ GS <- function(single_trait, pheno, geno, prop, k, method){
   predicted_training_result <- as.vector(predict_training[,1] + BLUE)
   predicted_testing_result <- as.vector(predict_testing[,1] + BLUE)
   
-  # Accuracy & correlation
-  accuracy <- cor(as.vector(pheno_testing), predicted_testing_result, use = "complete")
-  corr_model <- cor(as.vector(pheno_training), predicted_training_result, use = "complete")
-  
-  
-  
-  # 6: -------------------------------------------------------------------------
-  # Calculate end time
-  end_time <- Sys.time()
-  running_time <- end_time - start_time
-  
-  
   
   
   # 7: -------------------------------------------------------------------------
@@ -117,16 +98,15 @@ GS <- function(single_trait, pheno, geno, prop, k, method){
 
 # Example(s) -------------------------------------------------------------------
 # Set arguments
-# single_trait <- 'yield_ha'
+# single_trait <- 
 # pheno <-
-# geno <- 
-# prop <- 0.75
-# k: Define better (cv <- 100)
-# method <- 'mean'
+# geno <-
+# prop <-
+# method <-
 
 
 
 
 
 # Run function -----------------------------------------------------------------
-# GS(single_trait, pheno, geno, prop, k, method)
+# GEBVs(single_trait, pheno, geno, prop, method)

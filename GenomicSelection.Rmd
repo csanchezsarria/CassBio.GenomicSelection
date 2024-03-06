@@ -155,83 +155,11 @@ geno[geno == 2] <- 1
 geno[geno == '-'] <- NA
 ```
 
-# 10: Define function: GS_prediction
+# 10: Source function: GS
 
 ```{r}
-# Define the function
-GS <- function(single_trait, pheno, geno, prop, k, method){
-  
-    # Starting run time
-    start_time <- Sys.time()
-    
-    # Convert geno file into numeric values
-    geno <- sapply(geno[,-1], as.numeric)
-    
-    # Impute and extract imputed values in a data frame
-    geno_imputed <- 
-      data.frame(
-      A.mat(geno, max.missing = 0.5, impute.method = method, return.imputed = T)$imputed
-      )
-
-    # Round to -1, 0 and 1 the imputed values
-    geno_imputed <- round(geno_imputed, digits = 0)
-    
-    # Select the trait
-    trait <- pheno %>% select(all_of(single_trait)) %>% drop_na()
-    
-    # Estimate the proportion of samples to use and subset the data based on this
-    prop_num <- round(length(rownames(trait)) * prop)
-    geno_sub <- subset(geno_imputed, (rownames(geno_imputed) %in% rownames(trait)))
-
-    # Divide data in training and testing sets
-    training_samples <- as.matrix(sample(rownames(trait), prop_num))
-    testing_samples <- as.matrix(setdiff(rownames(trait), training_samples))
-    
-    # Select training data
-    pheno_training <- as.matrix(trait[training_samples,])
-    geno_training <- as.matrix(geno_sub[training_samples,])
-    
-    # Select testing data
-    pheno_testing <- as.matrix(trait[testing_samples,])
-    geno_testing <- as.matrix(geno_sub[testing_samples,])
-    
-    # Training model
-    trained_model <- mixed.solve(y = as.matrix(pheno_training), Z = geno_training)
-    
-    # Marker effect
-    marker_effects <- as.matrix(trained_model$u)
-    
-    # Baseline, intercept
-    BLUE <- as.vector(trained_model$beta)
-    
-    # Predictions
-    predict_training <- as.matrix(geno_training) %*% marker_effects
-    predict_testing <- as.matrix(geno_testing) %*% marker_effects
-    
-    # Predictions + BLUE
-    predicted_training_result <- as.vector(predict_training[,1] + BLUE)
-    predicted_testing_result <- as.vector(predict_testing[,1] + BLUE)
-    
-    # Accuracy & correlation
-    accuracy_testing <- cor(as.vector(pheno_testing), predicted_testing_result, 
-                            use = "complete")
-    corr_model <- cor(as.vector(pheno_training), predicted_training_result, 
-                      use = "complete")
-    
-    # Ends running time
-    end_time <- Sys.time()
-    
-    # Calculate the time
-    running_time <- end_time - start_time
-
-    return(list(trait = single_trait,
-                training_prop = prop,
-                testing_prop = 1 - prop,
-                cv = k,
-                prediction_ability = accuracy_testing, 
-                time = running_time))
-
-}
+# Get the function
+source('D:/OneDrive - CGIAR/00_CassavaBioinformaticsPlatform/00_Basics/04_GitHub/CassBio.GenomicSelection/R_code/GenomicSelection.R')
 ```
 
 # 11: Cross validation for single trait
@@ -343,7 +271,7 @@ cv <- 20
 props <- c(0.9, 0.8, 0.7, 0.6, 0.5)
 
 # Create an empty data frame to storage results
-trait_df <- data.frame(matrix(ncol = 5, nrow = 0))
+trait_df <- data.frame(matrix(ncol = 6, nrow = 0))
 
 # Create and set a directory to store the results
 setwd(dir)
@@ -397,146 +325,27 @@ write.csv(trait_df, paste0('GS_Results_AllTraits_DiffProp_', cv, '.csv'))
 end_time <- Sys.time()
 
 # Print running time
-message(paste0('Function ends of runnin. Time taken: ', (end_time - start_time)))
-```
-
-# 14: Plots
-
-```{r}
-# Write the labels
-labels <- c('Height', 'Dry matter gravity', 'Root skin color', 'Height 1st branch',
-            'Branch angle', 'Plant type', 'Root shape', 'Carotenoid', 
-            'Dry matter yield (ha)', 'Root peduncle', '# of commercial roots', 
-            'Branch number', 'Thrips', 'Yield (ha)', 'Root type', 'Root weight (Plot)',
-            'Height wt leaf', 'Root length', 'Germinated number (plot)', '% Germination',
-             'Root constriction')
-
-# Extract data
-traininig_value <- unique(trait_df$training_prop)
-CV_value <- max(trait_df$cv)
-
-# Accuracy plot for all traits
-pdf(paste0('GS_Plot_AccuracyAbility.pdf'), width = 15, height = 10)
-
-ggplot(trait_df, aes(x = prediction_ability, 
-                     y = reorder(trait, prediction_ability, FUN = median),
-                     fill = trait, alpha = 0.5)) +
-  geom_violin(fill = "gray80", color = "white", width = 1, alpha = 0.5) +
-  geom_boxplot(width = 0.3) + 
-  theme_classic() +
-  theme(legend.position = "none",
-        axis.title = element_text(size = 14, color = 'black'),
-        axis.text = element_text(size = 14, color = 'black'),
-        title = element_text(size = 14, color = 'black')) + 
-  labs(x = 'Prediction ability', y = 'Traits', 
-       title = paste0('Training proportion: ', traininig_value, ', CV: ', CV_value)) +
-  xlim(0, 1) +
-  scale_y_discrete(labels = labels) +
-  geom_vline(xintercept = 0.50, linetype = 'dotted', color = 'gray40', linewidth = 0.80) + 
-  geom_vline(xintercept = 0.30, linetype = 'dotted', color = 'gray40', linewidth = 0.80)
-
-dev.off()
-```
-
-# 15: Define function: Genomic Estimated Breeding Values (GEBVs)
-
-```{r}
-# Define function
-GEBVs <- function(single_trait, pheno, geno, testing_names){
-  
-  # Impute and extract imputed values in a data frame
-  Imputed <- 
-    data.frame(A.mat((sapply(geno[,-1], as.numeric)), max.missing = 0.5, 
-                     impute.method = "EM", return.imputed = T)$imputed)
-
-  # Round to -1, 0 and 1 the imputed values
-  geno_tr_model <- round(Imputed, digits = 0)
-
-  # Divide data in training and testing
-  training_samples <- data.frame(pheno$Genotype) %>%
-    sample_frac(prop_num, replace = F) %>%
-    rename(Genotype = 1)
-
-  testing_samples <- data.frame(setdiff(pheno$Genotype, training_samples$Genotype)) %>%
-    rename(Genotype = 1)
-
-  # Subset geno and pheno file according to training samples 
-  geno_tr <- geno %>% dplyr::filter(Genotype %in% training_samples$Genotype)
-  pheno_tr <- pheno %>% dplyr::filter(Genotype %in% training_samples$Genotype)
-  
-  #
-  trait <- pheno_tr %>% select(all_of(single_trait))
-  trained_model <- mixed.solve(y = as.matrix(trait), Z = geno_tr_model)
-    
-  #
-  marker_effects <- as.matrix(trained_model$u)
-  BLUE <- as.vector(trained_model$beta)
-  markers_model <- colnames(geno_tr_model)
-    
-  # 
-  geno_test <- geno %>% 
-    dplyr::filter(Genotype %in% testing_samples$Genotype) %>%
-    select(-1) %>%
-    select(one_of(markers_model))
-    
-  #
-  geno_test <- sapply(as.matrix(geno_test), as.numeric)
-    
-  #
-  predict_gs <- geno_test %*% marker_effects
-  predict_gs_result <- data.frame(predicted_value = (predict_gs[,1] + BLUE))
-
-  #
-  message(paste0("Saving GEBVs results of: ", single_trait))
-  write.csv(predict_gs_result, paste0(single_trait, '_GEBV.csv'))
-  return(list('trait' = single_trait,
-              'BLUE' = BLUE,
-              'mean' = mean(predict_gs_result[,1])))
-
-}
-```
-
-# 16: Estimate GEBVs DEFINIR BIEN VOLVER A REVISAR
-
-```{r}
-# Define inputs
-single_trait <- 'yield_ha'
-prop_num <- 0.8
-
-# Create and set a directory to store the results
-setwd(dir)
-dir.create(paste0('GS_GEBVs_SingleTrait_', single_trait))
-setwd(paste0('GS_GEBVs_SingleTrait_', single_trait))
-
-# Define starting point
-start_time <- Sys.time()
-
-# GEBVs for all traits
-for (single_trait in colnames(pheno)[-1]){
-    
-    #
-    message(paste0('Trait: ', single_trait))
-
-    #
-    blup_table <- data.frame(matrix(ncol = 2, nrow = 0))
-
-    # 
-    result <- gs_prediction(single_trait, pheno, geno, testing_names)
-    blup_table <- rbind(blup_table, data.frame(result))
-    
-    #
-    assign(paste0(single_trait, "_result" ), result)
-    save(result, file = paste0(single_trait, "_result.RData"))
-
-}
-
-# Save the results
-write.csv(blup_table, paste0('Results_BLUE_MEAN.csv'))
-
-# Calculate ending time
-end_time <- Sys.time()
-
-# Print running time
 message(paste0('Function ends of running. Time taken: ', (end_time - start_time)))
+```
+
+# 14: Source function: Plots
+
+```{r}
+# Source plotting function
+source('D:/OneDrive - CGIAR/00_CassavaBioinformaticsPlatform/00_Basics/04_GitHub/CassBio.GenomicSelection/R_code/AccuracyPlot.R')
+
+# Execute function
+AccuracyPlot(trait_df, type = 'single') ############
+
+```
+
+# 15: Source function: Genomic Estimated Breeding Values (GEBVs)
+
+```{r}
+# Source plotting function
+source('D:/OneDrive - CGIAR/00_CassavaBioinformaticsPlatform/00_Basics/04_GitHub/CassBio.GenomicSelection/R_code/GEBVs.R')
+
+# Execute function
+GEBVs(single_trait, pheno, geno, prop, method) ################
 
 ```
