@@ -169,7 +169,7 @@ source('D:/OneDrive - CGIAR/00_CassavaBioinformaticsPlatform/00_Basics/04_GitHub
 imp_method <- 'mean'
 GS_method <- 'REML'
 cv <- 100
-prop <- 0.75
+prop <- 0.8
 single_trait <- 'yield_ha'
 
 # Create an empty data frame to storage results
@@ -347,8 +347,51 @@ AccuracyPlot(trait_df, type = 'single') ############
 ```{r}
 # Source plotting function
 source('D:/OneDrive - CGIAR/00_CassavaBioinformaticsPlatform/00_Basics/04_GitHub/CassBio.GenomicSelection/R_code/GEBVs.R')
+```
 
-# Execute function
-GEBVs(single_trait, pheno, geno, prop, method) ################
+# 16: GEBVs for all traits
+
+```{r}
+# Define inputs
+imp_method <- 'mean'
+GS_method <- 'REML'
+prop <- 0.8
+
+# Create an empty data frame to storage results
+GEBVs_df <- data.frame(matrix(ncol = 6, nrow = 0))
+
+# Create and set a directory to store the results
+setwd(dir)
+dir.create(paste0('GS_GEBVs_Results_', prop))
+setwd(paste0('GS_GEBVs_Results_', prop))
+
+# Define starting point
+start_time <- Sys.time()
+
+# Perform the function complete using all traits and CV
+for (single_trait in colnames(pheno[,-1])){
+  
+  # Informative message
+  message(paste0('Working on trait: ', single_trait, '\n'))
+  
+  # Perform the function
+  result <- GEBVs(single_trait, pheno, geno, prop, imp_method, GS_method)
+    
+  # Store the results
+  GEBVs_df <- rbind(GEBVs_df, data.frame(result))
+  
+  # Informative message
+  message(paste0('\n', 'Done on trait: ', single_trait, '\n'))s
+    
+}
+
+# Save the results
+write.csv(GEBVs_df, paste0('GS_GEBVs_Results_', prop, '.csv'), row.names = F)
+
+# Calculate ending time
+end_time <- Sys.time()
+
+# Print running time
+message(paste0('Function ends of running. Time taken: ', (end_time - start_time)))
 
 ```

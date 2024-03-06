@@ -5,11 +5,12 @@
 # Authors: Camilo E. Sánchez-Sarria (c.e.sanchez@cgiar.org) and Vianey Barrera-Enriquez (vpbarrerae@gmail.com).
 #
 # Arguments:
-# single_trait:
+# single_trait: 
 # pheno:
 # geno: 
 # prop:
-# method:
+# imp_method:
+# GS_method: 
 
 
 
@@ -19,7 +20,7 @@
 
 
 # 0: Function init -------------------------------------------------------------
-GEBVs <- function(single_trait, pheno, geno, prop, method){
+GEBVs <- function(sinlge_trait, pheno, geno, prop, imp_method, GS_method){
   
   
   
@@ -30,7 +31,7 @@ GEBVs <- function(single_trait, pheno, geno, prop, method){
   # Impute and extract imputed values in a data frame
   geno_imputed <- 
     data.frame(
-      A.mat(geno, max.missing = 0.5, impute.method = method, return.imputed = T)$imputed
+      A.mat(geno, max.missing = 0.5, impute.method = imp_method, return.imputed = T)$imputed
     )
   
   # Round to -1, 0 and 1 the imputed values
@@ -62,7 +63,8 @@ GEBVs <- function(single_trait, pheno, geno, prop, method){
   
   # 4: -------------------------------------------------------------------------
   # Training model
-  trained_model <- mixed.solve(y = as.matrix(pheno_training), Z = geno_training)
+  trained_model <- mixed.solve(y = as.matrix(pheno_training), Z = geno_training,
+                               method = GS_method)
   
   # Marker effect
   marker_effects <- as.matrix(trained_model$u)
@@ -78,19 +80,38 @@ GEBVs <- function(single_trait, pheno, geno, prop, method){
   predict_testing <- as.matrix(geno_testing) %*% marker_effects
   
   # Predictions + BLUE
-  predicted_training_result <- as.vector(predict_training[,1] + BLUE)
-  predicted_testing_result <- as.vector(predict_testing[,1] + BLUE)
+  predicted_training_result <- as.data.frame(predict_training[,1] + BLUE)
+  predicted_testing_result <- as.data.frame(predict_testing[,1] + BLUE)
+  
+  
+  
+  # 6: -------------------------------------------------------------------------
+  # Change column names
+  colnames(predicted_training_result) <- 'value'
+  colnames(predicted_testing_result) <- 'value'
+  
+  # Creates new data frames pooling together training and testing results
+  genotype <- rbind(pheno[training_samples,] %>% select(Genotype),
+                     pheno[testing_samples,] %>% select(Genotype))
+  observed <- rbind(pheno[training_samples,] %>% select(all_of(single_trait)),
+                           pheno[testing_samples,] %>% select(all_of(single_trait)))
+  predicted <- rbind(predicted_training_result, predicted_testing_result)
+  
+  #
+  colnames(genotype) <- 'genotype'
+  colnames(observed) <- 'observed'
+  colnames(predicted) <- 'predicted'
   
   
   
   # 7: -------------------------------------------------------------------------
   # Return the results
   return(list(trait = single_trait,
+              genotypes = genotype,
+              observed_values = observed,
+              predicted_values = predicted,
               training_prop = prop,
-              testing_prop = 1 - prop,
-              cv = k,
-              accuracy = accuracy, 
-              time = running_time))
+              testing_prop = 1 - prop))
   
 }
 
