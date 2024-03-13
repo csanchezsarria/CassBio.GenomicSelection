@@ -12,6 +12,7 @@
 # k: 
 # imp_method:
 # GS_method: 
+# pedigree: 
 
 
 
@@ -21,7 +22,7 @@
 
 
 # 0: Function init -------------------------------------------------------------
-GS <- function(single_trait, pheno, geno, prop, k, imp_method, GS_method){
+GS <- function(single_trait, pheno, geno, prop, k, imp_method, GS_method, pedigree){
   
   
   
@@ -50,31 +51,73 @@ GS <- function(single_trait, pheno, geno, prop, k, imp_method, GS_method){
   # Select the trait
   trait <- pheno %>% select(all_of(single_trait)) %>% drop_na()
   
-  # Estimate the proportion of samples to use and subset the data based on this
-  prop_num <- round(length(rownames(trait)) * prop)
-  geno_sub <- subset(geno_imputed, (rownames(geno_imputed) %in% rownames(trait)))
-  
-  # Divide data in training and testing sets
-  training_samples <- as.matrix(sample(rownames(trait), prop_num))
-  testing_samples <- as.matrix(setdiff(rownames(trait), training_samples))
-  
-  # Select training data
-  pheno_training <- as.matrix(trait[training_samples,])
-  geno_training <- as.matrix(geno_sub[training_samples,])
-  
-  # Select testing data
-  pheno_testing <- as.matrix(trait[testing_samples,])
-  geno_testing <- as.matrix(geno_sub[testing_samples,])
+  # 
+  if (is.null(pedigree)){
+    
+    # Estimate the proportion of samples to use and subset the data based on this
+    prop_num <- round(length(rownames(trait)) * prop)
+    geno_sub <- subset(geno_imputed, (rownames(geno_imputed) %in% rownames(trait)))
+    
+    # Divide data in training and testing sets
+    training_samples <- as.matrix(sample(rownames(trait), prop_num))
+    testing_samples <- as.matrix(setdiff(rownames(trait), training_samples))
+    
+    # Select training data
+    pheno_training <- as.matrix(trait[training_samples,])
+    geno_training <- as.matrix(geno_sub[training_samples,])
+    
+    # Select testing data
+    pheno_testing <- as.matrix(trait[testing_samples,])
+    geno_testing <- as.matrix(geno_sub[testing_samples,])
+    
+    
+  } else {
+    
+    # 
+    training_samples <- parentals
+    testing_samples <- c()
+    
+    # 
+    for (f in unique(pedigree$Family)){
+      
+      # 
+      message(paste('Sampling family:', f))
+      
+      # 
+      child <- pedigree %>% filter(Family == f) %>% select(Acession)
+      
+      # 
+      training_db <- sample(child$Acession, size = floor(dim(child)[1] * 0.8))
+      testing_db <- setdiff(child$Acession, training_db)
+      
+      # 
+      training_samples <- c(training_samples, training_db)
+      testing_samples <- c(testing_samples, testing_db)
+      
+    }
+    
+    # Divide data in training and testing sets
+    training_samples <- as.matrix(sample(rownames(trait), prop_num))
+    testing_samples <- as.matrix(setdiff(rownames(trait), training_samples))
+    
+    # Select training data
+    pheno_training <- as.matrix(trait[training_samples,])
+    geno_training <- as.matrix(geno_sub[training_samples,])
+    
+    # Select testing data
+    pheno_testing <- as.matrix(trait[testing_samples,])
+    geno_testing <- as.matrix(geno_sub[testing_samples,])
+    
+  }
   
   
   
   # 4: -------------------------------------------------------------------------
   # Training model
-  trained_model <- mixed.solve(y = as.matrix(pheno_training), Z = geno_training,
-                               method = GS_method)
+  model <- mixed.solve(y = as.matrix(pheno_training), Z = geno_training, method = GS_method)
   
   # Marker effect
-  marker_effects <- as.matrix(trained_model$u)
+  marker_effects <- as.matrix(model$u)
   
   # Baseline, intercept
   BLUE <- as.vector(trained_model$beta)
@@ -125,10 +168,11 @@ GS <- function(single_trait, pheno, geno, prop, k, imp_method, GS_method){
 # prop <- 0.75
 # k: Define better (cv <- 100)
 # method <- 'mean'
+# pedigree <- NULL
 
 
 
 
 
 # Run function -----------------------------------------------------------------
-# GS(single_trait, pheno, geno, prop, k, method)
+# GS(single_trait, pheno, geno, prop, k, method, pedigree)
