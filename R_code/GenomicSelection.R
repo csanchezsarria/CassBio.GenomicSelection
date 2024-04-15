@@ -1,9 +1,9 @@
 # Short name: Genomic Selection
 # Description: 
 # Output: 
-#
+# 
 # Authors: Camilo E. Sánchez-Sarria (c.e.sanchez@cgiar.org) and Vianey Barrera-Enriquez (vpbarrerae@gmail.com).
-#
+# 
 # Arguments:
 # single_trait:
 # pheno:
